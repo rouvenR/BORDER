@@ -5,7 +5,7 @@ import string
 import sys
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 
@@ -28,9 +28,16 @@ def arg_parse():
                         help='name of the simulation folder')
     parser.add_argument('-n', '--file-name', dest='file_name', default=datetime.now().strftime("%H%M%S"),
                         help='name of the file')
+    parser.add_argument('--quiet', action='store_true',
+                        help='suppress console output')
     # parser.print_help()
 
     return parser.parse_args()
+
+
+def log(*values, **kwargs):
+    if not args.quiet:
+        print(*values, **kwargs)
 
 
 class Receiver(threading.Thread):
@@ -42,12 +49,13 @@ class Receiver(threading.Thread):
         self.connect_start = 0
         self.connect_result = []
         self.e2e_dict = {}
-        self.last_msg = None
+        self.last_msg_monotonic = None
+        self.done_event = threading.Event()
 
     def on_message(self, client, userdata, message):
-        self.last_msg = datetime.now()
+        self.last_msg_monotonic = time.monotonic()
         self.e2e_result.append(
-            "{},{},{},{},{}".format(args.host, client._client_id, str(message.payload.decode("utf-8")),
+            "{},{},{},{},{}".format(args.host, client._client_id, str(message.payload.decode("utf-8").strip()),
                                     current_milli_time(),
                                     args.qos))
         # self.e2e_dict[self.counter] = "{}, {}, {}, {}".format(args.host, client._client_id,
@@ -56,15 +64,16 @@ class Receiver(threading.Thread):
         #                                                       args.qos)
 
         self.counter += 1
-        if self.counter % 10 == 0:
-            print(".", end='', flush=True)
+        # if self.counter % 10 == 0:
+        #     print(".", end='', flush=True)
 
         if self.counter >= args.msg_num:
             self.is_running = False
+            self.done_event.set()
 
 
     def on_connect(self, client, userdata, flags, rc):
-        print("Client {} connected to {}".format(client._client_id, args.host))
+        log("Client {} connected to {}".format(client._client_id, args.host))
 
         self.connect_result.append("{},{},{},{}".format(args.host, client._client_id, self.connect_start,
                                                            current_milli_time()))
@@ -72,7 +81,8 @@ class Receiver(threading.Thread):
         client.subscribe(args.topic, args.qos)
 
     def run(self):
-        client = mqtt.Client("sub" + self.name + '-' + ''.join(random.choice(string.ascii_lowercase) for i in range(6)))
+        client_id = "sub" + self.name + '-' + ''.join(random.choice(string.ascii_lowercase) for i in range(6))
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=client_id)
 
         client.on_message = self.on_message
         client.on_connect = self.on_connect
@@ -81,31 +91,28 @@ class Receiver(threading.Thread):
         client.connect(args.host)
         client.loop_start()
 
-        while self.is_running:
-            if self.last_msg is not None:
-                if datetime.now() - self.last_msg > timedelta(minutes=2):
-                    self.is_running = False
-                    print("waited too much")
-            pass
+        try:
+            while self.is_running:
+                if self.done_event.wait(timeout=0.25):
+                    break
 
-        print("{} received {} messages".format(self.name, len(self.e2e_result)))
-        with open(args.folder + "/e2e" + file_name, "a") as f:
-            f.write("\n".join(self.e2e_result))
-            f.write("\n")
+                if self.last_msg_monotonic is not None:
+                    if time.monotonic() - self.last_msg_monotonic > 600:
+                        self.is_running = False
+                        log("waited too much")
+        finally:
+            client.loop_stop()
+            client.disconnect()
 
-        with open(args.folder + "/conn" + file_name, "a") as f:
-            f.write("\n".join(self.connect_result))
-            f.write("\n")
-
-        client.disconnect()
-        print("Client {} disconnected".format(self.name))
+        log("{} received {} messages".format(self.name, len(self.e2e_result)))
+        log("Client {} disconnected".format(self.name))
 
 
 def main():
     clients = []
     for cl in range(0, args.clients_num):
         t_mqtt = Receiver()
-        t_mqtt.setDaemon(True)
+        t_mqtt.daemon = True
         clients.append(t_mqtt)
 
     with open(args.folder + "/e2e" + file_name, "a") as f:
@@ -122,18 +129,34 @@ def main():
     for x in clients:
         x.join()
 
-    print("SUBSCRIBER {} is done receiving".format(broker_num[2]))
+    e2e_lines = []
+    conn_lines = []
+    for client in clients:
+        e2e_lines.extend(client.e2e_result)
+        conn_lines.extend(client.connect_result)
+
+    with open(args.folder + "/e2e" + file_name, "a") as f:
+        if e2e_lines:
+            f.write("\n".join(e2e_lines))
+            f.write("\n")
+
+    with open(args.folder + "/conn" + file_name, "a") as f:
+        if conn_lines:
+            f.write("\n".join(conn_lines))
+            f.write("\n")
+
+    log("SUBSCRIBER {} is done receiving".format(broker_num[2]))
     time.sleep(1)
     sys.exit(1)
 
 
 if __name__ == "__main__":
-    print("SUB CLIENT THREADED VERSIONe")
     args = arg_parse()
+    log("SUB CLIENT THREADED VERSIONe")
     broker_num = "_b" + args.host.split('.')[2] + "_"
     file_name = broker_num + args.file_name + ".txt"
-    print(">>> folder by sub: ", args.folder)
-    print(">>>> file name: ", file_name)
+    log(">>> folder by sub: ", args.folder)
+    log(">>>> file name: ", file_name)
     Path(args.folder).mkdir(parents=True, exist_ok=True)
 
     main()
