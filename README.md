@@ -11,17 +11,25 @@
 * Python Subscriber
 
 
-## How to run
+## Getting Started
+
+### Installation
+- ContainerNet: https://github.com/containernet/containernet
+- Mininet: https://mininet.org/download/
+- Docker (alternative): https://github.com/amirreza225/MinininetDocker-AppleSiliconCompatible
+
+### How to run
 1) Clean configuration: `sudo mn -c`
 
-2) Start the containernet simulation: `sudo python3 mesh_routers.py`
+2) Start the containernet simulation: `sudo python3 flexible_router.py`
    - `--type <container_type>` `-t`: MQTT broker cluster type
    - `--delay-routers <number>`, `-d`: delay on the router-router link
    - `--delay-switch <number>`, `-c`: delay on the router-switch(broker) link
    - `--disable-client`, `-s`: no clients in the simulation
    - `--ram-limit <ram_size>`: ram memory of the brokers (`500m`, `1g`, `2g`, `...`)
    - `--cpu`: enable a 16 core machine 
-   - Example: `sudo python3 mesh_routers.py --type emqx -d 5 -c 0 --ram-limit 2g`
+   - `--brokers`, `-b`: number of brokers
+   - Example: `sudo python3 flexible_router.py --type emqx -d 5 -c 0 --ram-limit 2g`
    
 3) Start clients/log scripts: `./start_clients.sh`
     - `--clients <number>`: number of pub/sub clients 
