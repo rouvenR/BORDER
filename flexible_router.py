@@ -7,12 +7,14 @@ from mininet.cli import CLI
 from mininet.node import Node
 from mininet.link import TCLink
 from mininet.log import debug, info, error, setLogLevel
+from docker.types import Ulimit
 import argparse
 from shutil import copyfile
 import ipaddress
 import itertools
 import math
 import os
+import re
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -23,20 +25,34 @@ TOTAL_BROKERS = 3
 DELAY = 10
 BRIDGE_QOS = 2
 IP_ADDR = '10.0.'
+CPU_DEFAULT = 1
 CPU_VBOX = 6
 CPU_ANTLAB = 12
 IMAGES = {
     "EMQX": "flipperthedog/emqx-ip:latest",
     "VERNEMQ": "francigjeci/vernemq-debian:latest",
     "RABBITMQ": "flipperthedog/rabbitmq_alpine:latest",
+    "JORAMMQ_LOCAL_FILE": "/border-project/joram_1.22.0",
     "HIVEMQ": "francigjeci/hivemq:dns-image",
     # "HIVEMQ":      "flipperthedog/hivemq_alpine:latest",
     "MOSQUITTO": "flipperthedog/mosquitto:latest",
     "SUBSCRIBER": "flipperthedog/alpine_client:latest",
-    "PUBLiSHER": "flipperthedog/go_publisher:latest"
-
+    "PUBLiSHER": "flipperthedog/go_publisher:latest",
+    "PUBLISHER_MZBENCH": "/border-project/mzbench",
+    "SUBSCRIBER_LOCAL_FILE": "/border-project/containernet/BORDER/clients/alpine_container/alpine_client"
 }
 
+NOFILE_SOFT_DEFAULT = 20000
+NOFILE_HARD_DEFAULT = 100000
+
+
+def build_nofile_ulimit():
+    # Use a fresh Ulimit object per container to avoid shared mutable state surprises.
+    return [Ulimit(name='nofile', soft=NOFILE_SOFT_DEFAULT, hard=NOFILE_HARD_DEFAULT)]
+
+JORAMMQ_IMAGE_LOADED = None
+MZBENCH_IMAGE_LOADED = None
+SUBSCRIBER_IMAGE_LOADED = None
 
 class MyContainer:
     def __init__(self, _id, cluster_type, router_ip, cpu, ram):
@@ -100,7 +116,7 @@ class LinuxRouter(Node):
 def arg_parse():
     parser = argparse.ArgumentParser(description='MQTT cluster simulation')
     parser.add_argument('-t', '--type', dest='cluster_type', default='emqx',
-                        help='broker type (EMQX, RABBITMQ, VERNEMQ, HIVEMQ, MOSQUITTO)')
+                        help='broker type (EMQX, RABBITMQ, VERNEMQ, HIVEMQ, MOSQUITTO, JORAMMQ)')
     parser.add_argument('-d', '--delay-routers', dest='router_delay', default=DELAY,
                         help='delay over a router link', type=int)
     parser.add_argument('-c', '--delay-switch', dest='container_delay', default=DELAY,
@@ -111,8 +127,8 @@ def arg_parse():
                         action='store_true', help='exclude clients in the simulation')
     parser.add_argument('--ram-limit', dest='ram_limit', default='',
                         help='ram memory of the brokers')
-    parser.add_argument('--cpu', dest='cpu', default=False, action='store_true',
-                        help='use 16 cores machine')
+    parser.add_argument('--cpu', dest='cpu', default=CPU_DEFAULT, type=int,
+                        help='number of CPU cores to use for the brokers')
 
     return parser.parse_args()
 
@@ -124,6 +140,7 @@ def start_emqx(container):
                          ports=[1883], port_bindings={1883: container.bind_port},
                          mem_limit=container.ram,
                          cpuset_cpus=container.cpu,
+                         ulimits=build_nofile_ulimit(),
                          environment={"EMQX_NAME": container.name,
                                       "EMQX_HOST": container.address[:-3],
                                       "EMQX_NODE__DIST_LISTEN_MAX": 6379,
@@ -155,6 +172,7 @@ def start_rabbitmq(container):
                           PWD + "/confiles/enabled_plugins:/etc/rabbitmq/enabled_plugins"],
                       mem_limit=container.ram,
                       cpuset_cpus=container.cpu,
+                      ulimits=build_nofile_ulimit(),
                       environment={"RABBITMQ_ERLANG_COOKIE": "GPLDKBRJYMSKLTLZQDVG"})
 
     for i in range(TOTAL_BROKERS):
@@ -162,6 +180,109 @@ def start_rabbitmq(container):
         d.cmd('echo "{}      {}" >> /etc/hosts'.format(_ip, "rabbitmq" + str(i)))
 
     return d
+
+
+def resolve_jorammq_image():
+    global JORAMMQ_IMAGE_LOADED
+    if JORAMMQ_IMAGE_LOADED:
+        return JORAMMQ_IMAGE_LOADED
+
+    image_file = IMAGES["JORAMMQ_LOCAL_FILE"] # os.path.join(PWD, )
+    if not os.path.exists(image_file):
+        print("JORAMMQ image file not found: {}".format(image_file))
+
+    output = subprocess.check_output(
+        ["docker", "load", "-i", image_file],
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    match = re.search(r"Loaded image: (.+)", output)
+    if match:
+        JORAMMQ_IMAGE_LOADED = match.group(1).strip()
+
+    return JORAMMQ_IMAGE_LOADED
+
+
+def resolve_mzbench_image():
+    """Resolve publisher image as either a Docker tag or a local tar archive."""
+    global MZBENCH_IMAGE_LOADED
+    if MZBENCH_IMAGE_LOADED:
+        return MZBENCH_IMAGE_LOADED
+
+    image_ref = IMAGES["PUBLISHER_MZBENCH"]
+
+    # If the configured value points to an existing file, treat it as a Docker image archive.
+    if os.path.exists(image_ref):
+        output = subprocess.check_output(
+            ["docker", "load", "-i", image_ref],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        match = re.search(r"Loaded image: (.+)", output)
+        if not match:
+            raise RuntimeError("Could not determine image tag after docker load from {}".format(image_ref))
+        MZBENCH_IMAGE_LOADED = match.group(1).strip()
+        return MZBENCH_IMAGE_LOADED
+
+    # A leading slash indicates a path-like value, not a valid Docker image reference.
+    if image_ref.startswith('/'):
+        raise ValueError(
+            "Invalid PUBLISHER_MZBENCH image reference '{}'. Use a Docker tag (e.g. mzbench:latest) "
+            "or a path to a .tar image archive.".format(image_ref)
+        )
+
+    MZBENCH_IMAGE_LOADED = image_ref
+    return MZBENCH_IMAGE_LOADED
+
+
+def resolve_subscriber_image():
+    """Resolve subscriber image from the configured local Docker archive."""
+    global SUBSCRIBER_IMAGE_LOADED
+    if SUBSCRIBER_IMAGE_LOADED:
+        return SUBSCRIBER_IMAGE_LOADED
+
+    image_file = IMAGES["SUBSCRIBER_LOCAL_FILE"]
+    if not os.path.exists(image_file):
+        raise ValueError(
+            "SUBSCRIBER_LOCAL_FILE '{}' does not exist. Build/export the image first."
+            .format(image_file)
+        )
+
+    output = subprocess.check_output(
+        ["docker", "load", "-i", image_file],
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    match = re.search(r"Loaded image: (.+)", output)
+    if not match:
+        raise RuntimeError(
+            "Could not determine subscriber image tag after docker load from {}"
+            .format(image_file)
+        )
+
+    SUBSCRIBER_IMAGE_LOADED = match.group(1).strip()
+    return SUBSCRIBER_IMAGE_LOADED
+
+
+def start_jorammq(container):
+    # Equivalent to docker run ... -p 1883:1883 -p 18090:18090 with per-broker host ports.
+    mgmt_port = 18090 + container.id
+    image = resolve_jorammq_image()
+    print("Using JoramMQ image: {}".format(image))
+    return net.addDocker(
+        hostname=container.name,
+        name=container.name,
+        ip=container.address,
+        defaultRoute='via {}'.format(container.default_route),
+        dimage=image,
+        # dcmd="/bin/sh",
+        ports=[1883, 18090],
+        port_bindings={1883: container.bind_port, 18090: mgmt_port},
+        mem_limit=container.ram,
+        cpuset_cpus=container.cpu,
+        ulimits=build_nofile_ulimit(),
+    )
 
 
 def start_hivemq(container):
@@ -202,6 +323,7 @@ def start_hivemq(container):
                                  PWD + "/confiles/config-dns{}.xml:/opt/hivemq/conf/config.xml".format(container.id)],
                              mem_limit=container.ram,
                              cpuset_cpus=container.cpu,
+                             ulimits=build_nofile_ulimit(),
                              environment={
                                  "HIVEMQ_BIND_ADDRESS": container.address[:-3],
                                  "HIVEMQ_LICENSE": hive_license
@@ -225,6 +347,7 @@ def start_vernemq(container):
                       ports=[1883], port_bindings={1883: container.bind_port},
                       mem_limit=container.ram,
                       cpuset_cpus=container.cpu,
+                      ulimits=build_nofile_ulimit(),
                       volumes=[
                           "{}/confiles/verne_build.sh:/usr/sbin/start_vernemq.sh".format(PWD),
                           "{}:/vernemq/etc/vernemq.conf.local".format(dest_file)],
@@ -264,7 +387,8 @@ def start_mosquitto(container):
                          volumes=["{}:/mosquitto/config/mosquitto.conf".format(dest_file)],
                          ports=[1883], port_bindings={1883: container.bind_port},
                          mem_limit=container.ram,
-                         cpuset_cpus=container.cpu
+                         cpuset_cpus=container.cpu,
+                         ulimits=build_nofile_ulimit()
                          )
 
 
@@ -286,6 +410,7 @@ def create_containers(broker_type, _routers):
     switcher = {
         'emqx': start_emqx,
         'rabbitmq': start_rabbitmq,
+        'jorammq': start_jorammq,
         'vernemq': start_vernemq,
         'hivemq': start_hivemq,
         'mosquitto': start_mosquitto
@@ -370,10 +495,12 @@ def main():
     if not args.no_clients:
         info('\n*** Adding subscribers\n')
         sub_list = []
+        subscriber_image = resolve_subscriber_image()
         for indx, ip_addr in enumerate(ip_routers):
             sub = net.addDocker('sub{}'.format(indx), ip='{}/24'.format(ip_addr[111].compressed),
-                                dimage=IMAGES["SUBSCRIBER"],
-                                volumes=[PWD + '/experiments:/home/ubuntu/experiments'])
+                                dimage=subscriber_image,
+                                volumes=['/home/randerer/results/single_broker_results/experiments:/home/ubuntu/experiments'],
+                                ulimits=build_nofile_ulimit())
             sub_list.append(sub)
 
         # switch sub link
@@ -382,10 +509,11 @@ def main():
 
         info('\n*** Adding publishers\n')
         pub_list = []
+        publisher_image = resolve_mzbench_image()
         for indx, ip_addr in enumerate(ip_routers):
             pub = net.addDocker('pub{}'.format(indx), ip='{}/24'.format(ip_addr[112].compressed),
-                                dimage=IMAGES["PUBLiSHER"],
-                                volumes=[PWD + '/experiments:/go/src/app/experiments'])
+                                dimage=publisher_image,
+                                ulimits=build_nofile_ulimit()) # ,volumes=['/home/randerer/results/single_broker_results/experiments:/go/src/app/experiments'])
             pub_list.append(pub)
 
         # switch pub link
@@ -411,25 +539,23 @@ def main():
     info('\n*** Waiting the network start up ({} secs)...\n'.format(args.router_delay / 2))
     time.sleep(args.router_delay / 2)
 
-    info('\n killing net')
-    for c in container_list:
-        c.cmd("ip link set eth0 down")
 
-    if not args.no_clients:
-        for s, p in zip(sub_list, pub_list):
-            s.cmd("ip link set eth0 down")
-            p.cmd("ip link set eth0 down")
+
+
 
     info('\n*** Starting the containers (entrypoints)\n')
-    [c.start() for c in container_list]
+    for c in container_list:
+        c.start()
 
     info('*** Waiting the boot ({} secs)...\n'.format(args.router_delay))
     time.sleep(args.router_delay)
 
-    info('*** Running CLI\n')
-    CLI(net)
-    info('*** Stopping network')
-    net.stop()
+    info('*** Keeping network alive for 3000 seconds\n')
+    try:
+        time.sleep(3000)
+    finally:
+        info('*** Stopping network\n')
+        net.stop()
 
 
 if __name__ == "__main__":
@@ -439,7 +565,7 @@ if __name__ == "__main__":
 
     args = arg_parse()
     TOTAL_BROKERS = args.num_broker
-    CORE_NUM = CPU_ANTLAB if args.cpu else CPU_VBOX
+    CORE_NUM = args.cpu
     core_list = list(range(0, CORE_NUM))
 
     main()
