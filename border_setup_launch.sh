@@ -259,7 +259,15 @@ if [ -z "$CLIENTS_QOS0" ] || [ -z "$CLIENTS_QOS1" ] || [ -z "$CLIENTS_QOS2" ] ||
 fi
 
 # PREREQUESITE: Built image for MZBench Publisher
+cd /mzbench-docker-deployment
+chmod +x /home/randerer/mzbench-docker-deployment/build.sh
 /home/randerer/mzbench-docker-deployment/build.sh
+cd ..
+
+cd /jorammq-deployment
+chmod +x /home/randerer/jorammq-deployment/build.sh
+/home/randerer/jorammq-deployment/build.sh
+cd ..
 
 
 
