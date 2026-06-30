@@ -300,15 +300,15 @@ fi
 sleep $EXPERIMENT_DURAION
 
 broker_type_lower=$(echo "$BROKER_TYPE" | tr '[:upper:]' '[:lower:]')
-docker logs "mn.pub0" > "/home/logs/${RUN_TAG}_pub0_docker.log"
-docker logs "mn.sub0" > "/home/logs/${RUN_TAG}_sub0_docker.log"
-docker logs "mn.${broker_type_lower}0" > "/home/logs/${RUN_TAG}_${broker_type_lower}0_docker.log"
-lscpu > "/home/logs/${RUN_TAG}_lscpu.log"
-free -h > "/home/logs/${RUN_TAG}_free.log"
+docker logs "mn.pub0" > "/home/randerer/logs/${RUN_TAG}_pub0_docker.log"
+docker logs "mn.sub0" > "/home/randerer/logs/${RUN_TAG}_sub0_docker.log"
+docker logs "mn.${broker_type_lower}0" > "/home/randerer/logs/${RUN_TAG}_${broker_type_lower}0_docker.log"
+lscpu > "/home/randerer/logs/${RUN_TAG}_lscpu.log"
+free -h > "/home/randerer/logs/${RUN_TAG}_free.log"
 
 
 if [ "$BROKER_TYPE" = "JORAMMQ" ]; then
-    docker cp "mn.jorammq0:/home/jorammq/log/server-0.0.log" "/home/logs/${RUN_TAG}_jorammq0_internal.log"
+    docker cp "mn.jorammq0:/home/jorammq/log/server-0.0.log" "/home/randerer/logs/${RUN_TAG}_jorammq0_internal.log"
 fi
 
 kill -9 $FILE_PID

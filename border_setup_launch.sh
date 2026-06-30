@@ -259,21 +259,26 @@ if [ -z "$CLIENTS_QOS0" ] || [ -z "$CLIENTS_QOS1" ] || [ -z "$CLIENTS_QOS2" ] ||
 fi
 
 # PREREQUESITE: Built image for MZBench Publisher
-cd /mzbench-docker-deployment
-chmod +x /home/randerer/mzbench-docker-deployment/build.sh
-/home/randerer/mzbench-docker-deployment/build.sh
+cd ./mzbench-docker-deployment
+chmod +x build.sh
+./build.sh
 cd ..
 
-cd /jorammq-deployment
-chmod +x /home/randerer/jorammq-deployment/build.sh
-/home/randerer/jorammq-deployment/build.sh
+cd ./jorammq-deployment
+chmod +x build.sh
+./build.sh
 cd ..
+
+cd ./border/containernet/BORDER/clients/alpine_container/
+chmod +x build.sh
+./build.sh
+cd /home/randerer/
 
 
 
 cp -r /home/randerer/border/containernet/BORDER /border-project/containernet
 
-cp /home/randerer/jorammq/joram_1.22.0 /border-project/joram_1.22.0
+cp /home/randerer/jorammq-deployment/joram_1.22.0 /border-project/joram_1.22.0
 
 cd /border-project/containernet/BORDER
 
