@@ -1,3 +1,11 @@
+# Fork Source Project
+This project extends BORDER. Refer to the [BORDER source project](https://github.com/ANTLab-polimi/BORDER) for more information.
+
+
+# Root Project
+This project is part of the broader BORDER extension project. Refer to the [Orchestration Project](https://github.com/rouvenR/BORDER-grid5k-orchestration) for more context.
+
+
 # MQTTbench Containernet 
 
 ## Containernet configurations: 
