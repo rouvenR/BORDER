@@ -55,7 +55,7 @@ for i in "${!CONFIGS[@]}"; do
 	config="${CONFIGS[$i]}"
 	read -r clients_qos0 delay_qos0 messages_qos0 size_qos0 clients_qos1 delay_qos1 messages_qos1 size_qos1 clients_qos2 delay_qos2 messages_qos2 size_qos2 cpu ram_limit scenario connect_rps <<< "$config"
 	run_tag="${BASE_START_TIME}_${i}__C0${clients_qos0}_D0${delay_qos0}_M0${messages_qos0}_S0${size_qos0}_C1${clients_qos1}_D1${delay_qos1}_M1${messages_qos1}_S1${size_qos1}_C2${clients_qos2}_D2${delay_qos2}_M2${messages_qos2}_S2${size_qos2}_CPU${cpu}_RAM${ram_limit}" # _SC${scenario}_CR${connect_rps}
-	echo ram_limit: ${ram_limit}
+	echo Started with timestamp ${BASE_START_TIME} and run tag ${run_tag}
 	oarsub_args=(-t deploy -p "host IN (dahu-4,dahu-5,dahu-6,dahu-7,dahu-8,dahu-9,dahu-10,dahu-11,dahu-12,dahu-13,dahu-14,dahu-15,dahu-16,dahu-17,dahu-19,dahu-20,dahu-21,dahu-22,dahu-23,dahu-24,dahu-25)" -l "walltime=${WALLTIME}")
 	if [[ "$ENABLE_NIGHT" == true ]]; then
 		oarsub_args+=( -t night )
