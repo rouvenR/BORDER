@@ -13,12 +13,12 @@ apt-get install ansible
 
 cd ..
 cd ..
-mkdir border-project
+mkdir -p border-project
 cd border-project
 
 git clone https://github.com/rouvenR/containernet.git
 cd containernet
-mkdir BORDER
+mkdir -p BORDER
 ansible-playbook -i "localhost," -c local -e "ansible_python_interpreter=/usr/bin/python3 force_install=true" ./ansible/install.yml
 
 echo "pip installations"

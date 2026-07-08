@@ -15,6 +15,7 @@ CPU="1"
 RAM_LIMIT="1g"
 BROKER_TYPE="RABBITMQ"
 RUN_TESTS="false"
+REBUILD_IMAGES="false"
 SCENARIO="0"
 CONNECT_RPS="1"
 WAIT_TIME_CLUSTER_LAUNCH_SECONDS=300
@@ -78,7 +79,7 @@ JSON
 }
 
 usage() {
-    echo "Usage: $0 --run-tag <RUN_TAG> --clients-qos0 <N> --clients-qos1 <N> --clients-qos2 <N> --delay-qos0 <N> --delay-qos1 <N> --delay-qos2 <N> --messages-qos0 <N> --messages-qos1 <N> --messages-qos2 <N> --size-qos0 <BYTES> --size-qos1 <BYTES> --size-qos2 <BYTES> [--scenario <N>] [--connect-rps <N>] [--cpu <N>] [--ram-limit <VALUE>] [--broker-type <TYPE>] [--run-tests <true|false>]"
+    echo "Usage: $0 --run-tag <RUN_TAG> --clients-qos0 <N> --clients-qos1 <N> --clients-qos2 <N> --delay-qos0 <N> --delay-qos1 <N> --delay-qos2 <N> --messages-qos0 <N> --messages-qos1 <N> --messages-qos2 <N> --size-qos0 <BYTES> --size-qos1 <BYTES> --size-qos2 <BYTES> [--scenario <N>] [--connect-rps <N>] [--cpu <N>] [--ram-limit <VALUE>] [--broker-type <TYPE>] [--run-tests <true|false>] [--rebuild-images <true|false>]"
     exit 2
 }
 
@@ -226,6 +227,20 @@ while [ "$#" -gt 0 ]; do
             esac
             shift 2
             ;;
+        --rebuild-images)
+            if [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+                echo "Missing value for --rebuild-images"
+                usage
+            fi
+            case "$2" in
+                true|false) REBUILD_IMAGES="$2" ;;
+                *)
+                    echo "Invalid value for --rebuild-images: $2 (expected true or false)"
+                    usage
+                    ;;
+            esac
+            shift 2
+            ;;
         --scenario)
             if [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
                 echo "Missing value for --scenario"
@@ -258,35 +273,32 @@ if [ -z "$CLIENTS_QOS0" ] || [ -z "$CLIENTS_QOS1" ] || [ -z "$CLIENTS_QOS2" ] ||
     usage
 fi
 
-# PREREQUESITE: Built image for MZBench Publisher
-cd ./mzbench-docker-deployment
-chmod +x build.sh
-./build.sh
-cd ..
+# Copy images to local machine
 
-cd ./jorammq-deployment
-chmod +x build.sh
-./build.sh
-cd ..
 
-cd ./border/containernet/BORDER/clients/alpine_container/
-chmod +x build.sh
-./build.sh
-cd /home/randerer/
 
+cp /home/randerer/jorammq-deployment/joram_1.22.0 /border-project/joram_1.22.0
+cp /home/randerer/mzbench-docker-deployment/mzbench /border-project/mzbench
 
 
 cp -r /home/randerer/border/containernet/BORDER /border-project/containernet
 
-cp /home/randerer/jorammq-deployment/joram_1.22.0 /border-project/joram_1.22.0
-
 cd /border-project/containernet/BORDER
+
+if [ "$REBUILD_IMAGES" = "true" ]; then
+    echo "Rebuilding Docker images before launch"
+    /home/randerer/rebuild_images.sh
+fi
 
 configure_docker_default_ulimits
 sleep 30 # Wait for Docker Restart to complete before proceeding
 
 echo "Running BORDER in parallel"
 # BORDER example
+
+mkdir -p results/
+mkdir -p results/single_broker_results
+mkdir -p results/single_broker_results/experiments
 
 if [ "$RUN_TESTS" = "true" ]; then
     ( sleep $WAIT_TIME_CLUSTER_LAUNCH_SECONDS; sudo ./start_clients.sh --run-tag "$RUN_TAG" --clients-qos0 "$CLIENTS_QOS0" --clients-qos1 "$CLIENTS_QOS1" --clients-qos2 "$CLIENTS_QOS2" --delay-qos0 "$DELAY_QOS0" --delay-qos1 "$DELAY_QOS1" --delay-qos2 "$DELAY_QOS2" --messages-qos0 "$MESSAGES_QOS0" --messages-qos1 "$MESSAGES_QOS1" --messages-qos2 "$MESSAGES_QOS2" --size-qos0 "$SIZE_QOS0" --size-qos1 "$SIZE_QOS1" --size-qos2 "$SIZE_QOS2" --scenario "$SCENARIO" --connect-rps "$CONNECT_RPS" --name /home/randerer/results/single_broker_results --brokers 1 ) &

@@ -6,6 +6,7 @@ WALLTIME="1:00:00"
 BASE_START_TIME="$(date +"%Y%m%d%H%M%S")"
 ENABLE_NIGHT=false
 ANALYZE_DATA=false
+REBUILD_IMAGES=false
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -14,6 +15,9 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--analyze-data)
 			ANALYZE_DATA=true
+			;;
+		--rebuild-images)
+			REBUILD_IMAGES=true
 			;;
 		*)
 			echo "Unknown argument: $1" >&2
@@ -32,22 +36,42 @@ get_pipeline_reservation_time() {
 }
 
 # Columns: clients_qos0 delay_qos0 messages_qos0 size_qos0 clients_qos1 delay_qos1 messages_qos1 size_qos1 clients_qos2 delay_qos2 messages_qos2 size_qos2 cpu ram_limit scenario connect_rps
+# clients_* = number of clients; delay_* delay between messages in ms (constant)
 # Scenario flag: 0 = default experiment, 1 = scenario 1, 2 = scenario 2, 3 = scenario 3
 # Example configuration for 10 experiments with step-sized message size QoS 1
-# VARIABLE_COLUMN="message_size_qos1"
-VARIABLE_COLUMN="${VARIABLE_COLUMN:-message_size_qos1}"
+VARIABLE_COLUMN="message_size_qos1"
 CONFIGS=(
 	"1 20 0 100 100 500 600 100 1 20 0 100 2 1g 0 1"
 	"1 20 0 1000 100 500 600 2000 1 20 0 1000 2 1g 0 1"
 	"1 20 0 5000 100 500 600 4000 1 20 0 5000 2 1g 0 1"
 )
-	# "1 20 0 10000 100 500 600 6000 1 20 0 10000 2 1g 0 1"
-	# "1 20 0 20000 100 500 600 8000 1 20 0 20000 2 1g 0 1"
-	# "1 20 0 30000 100 500 600 10000 1 20 0 30000 2 1g 0 1"
-	# "1 20 0 40000 100 500 600 12000 1 20 0 40000 2 1g 0 1"
-	# "1 20 0 50000 100 500 600 14000 1 20 0 50000 2 1g 0 1"
-	# "1 20 0 50000 100 500 600 16000 1 20 0 50000 2 1g 0 1"
-	# "1 20 0 50000 100 500 600 18000 1 20 0 50000 2 1g 0 1"
+
+# VARIABLE_COLUMN="incoming_throughput_qos1"
+# CONFIGS=(
+# 	"1 20 0 100 1 5000 60 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 50 6000 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 16 18750 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 10 30000 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 7 42857 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 500 600 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 25 12000 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 12 25000 100 1 20 0 100 2 1g 0 1"
+# 	"1 20 0 100 1 8 37500 100 1 20 0 100 2 1g 0 1"
+# )
+
+# VARIABLE_COLUMN="incoming_throughput_qos0"
+# CONFIGS=(
+# 	"100 5000 60 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 50 6000 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 16 18750 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 10 30000 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 7 42857 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 500 600 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 25 12000 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 12 25000 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# 	"100 8 37500 100 1 20 0 100 1 20 0 100 2 1g 0 1"
+# )
+
 
 
 
@@ -62,7 +86,7 @@ for i in "${!CONFIGS[@]}"; do
 	fi
 	oarsub "${oarsub_args[@]}" "
         kadeploy3 -a border-custom-environment.yaml -o /tmp/${run_tag}.txt;
-		./launch_border_via_ssh.sh --run-tag ${run_tag} --clients-qos0 ${clients_qos0} --clients-qos1 ${clients_qos1} --clients-qos2 ${clients_qos2} --delay-qos0 ${delay_qos0} --delay-qos1 ${delay_qos1} --delay-qos2 ${delay_qos2} --messages-qos0 ${messages_qos0} --messages-qos1 ${messages_qos1} --messages-qos2 ${messages_qos2} --size-qos0 ${size_qos0} --size-qos1 ${size_qos1} --size-qos2 ${size_qos2} --scenario ${scenario} --connect-rps ${connect_rps} --cpu ${cpu} --ram-limit ${ram_limit} --broker-type JORAMMQ --run-tests true
+		./launch_border_via_ssh.sh --run-tag ${run_tag} --clients-qos0 ${clients_qos0} --clients-qos1 ${clients_qos1} --clients-qos2 ${clients_qos2} --delay-qos0 ${delay_qos0} --delay-qos1 ${delay_qos1} --delay-qos2 ${delay_qos2} --messages-qos0 ${messages_qos0} --messages-qos1 ${messages_qos1} --messages-qos2 ${messages_qos2} --size-qos0 ${size_qos0} --size-qos1 ${size_qos1} --size-qos2 ${size_qos2} --scenario ${scenario} --connect-rps ${connect_rps} --cpu ${cpu} --ram-limit ${ram_limit} --broker-type JORAMMQ --run-tests true --rebuild-images ${REBUILD_IMAGES}
         " > "/home/randerer/logs/${run_tag}_oarsub_id.log"
 done
 

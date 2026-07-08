@@ -15,11 +15,12 @@ CPU="1"
 RAM_LIMIT="1g"
 BROKER_TYPE="RABBITMQ"
 RUN_TESTS="false"
+REBUILD_IMAGES="false"
 SCENARIO="0"
 CONNECT_RPS="1"
 
 usage() {
-    echo "Usage: $0 --run-tag <RUN_TAG> --clients-qos0 <N> --clients-qos1 <N> --clients-qos2 <N> --delay-qos0 <N> --delay-qos1 <N> --delay-qos2 <N> --messages-qos0 <N> --messages-qos1 <N> --messages-qos2 <N> --size-qos0 <BYTES> --size-qos1 <BYTES> --size-qos2 <BYTES> [--scenario <N>] [--connect-rps <N>] [--cpu <N>] [--ram-limit <VALUE>] [--broker-type <TYPE>] [--run-tests <true|false>]"
+    echo "Usage: $0 --run-tag <RUN_TAG> --clients-qos0 <N> --clients-qos1 <N> --clients-qos2 <N> --delay-qos0 <N> --delay-qos1 <N> --delay-qos2 <N> --messages-qos0 <N> --messages-qos1 <N> --messages-qos2 <N> --size-qos0 <BYTES> --size-qos1 <BYTES> --size-qos2 <BYTES> [--scenario <N>] [--connect-rps <N>] [--cpu <N>] [--ram-limit <VALUE>] [--broker-type <TYPE>] [--run-tests <true|false>] [--rebuild-images <true|false>]"
     exit 2
 }
 
@@ -167,6 +168,20 @@ while [ "$#" -gt 0 ]; do
             esac
             shift 2
             ;;
+        --rebuild-images)
+            if [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+                echo "Missing value for --rebuild-images"
+                usage
+            fi
+            case "$2" in
+                true|false) REBUILD_IMAGES="$2" ;;
+                *)
+                    echo "Invalid value for --rebuild-images: $2 (expected true or false)"
+                    usage
+                    ;;
+            esac
+            shift 2
+            ;;
         --scenario)
             if [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
                 echo "Missing value for --scenario"
@@ -200,4 +215,4 @@ if [ -z "$CLIENTS_QOS0" ] || [ -z "$CLIENTS_QOS1" ] || [ -z "$CLIENTS_QOS2" ] ||
 fi
 
 ( ssh  "root@$(head -n1 /tmp/${RUN_TAG}.txt)" "sleep infinity" ) &
-ssh -t "root@$(head -n1 /tmp/${RUN_TAG}.txt)" "cd /home/randerer && ./border_setup_launch.sh --run-tag ${RUN_TAG} --clients-qos0 ${CLIENTS_QOS0} --clients-qos1 ${CLIENTS_QOS1} --clients-qos2 ${CLIENTS_QOS2} --delay-qos0 ${DELAY_QOS0} --delay-qos1 ${DELAY_QOS1} --delay-qos2 ${DELAY_QOS2} --messages-qos0 ${MESSAGES_QOS0} --messages-qos1 ${MESSAGES_QOS1} --messages-qos2 ${MESSAGES_QOS2} --size-qos0 ${SIZE_QOS0} --size-qos1 ${SIZE_QOS1} --size-qos2 ${SIZE_QOS2} --scenario ${SCENARIO} --connect-rps ${CONNECT_RPS} --cpu ${CPU} --ram-limit ${RAM_LIMIT} --broker-type ${BROKER_TYPE} --run-tests ${RUN_TESTS}"
+ssh -t "root@$(head -n1 /tmp/${RUN_TAG}.txt)" "cd /home/randerer && ./border_setup_launch.sh --run-tag ${RUN_TAG} --clients-qos0 ${CLIENTS_QOS0} --clients-qos1 ${CLIENTS_QOS1} --clients-qos2 ${CLIENTS_QOS2} --delay-qos0 ${DELAY_QOS0} --delay-qos1 ${DELAY_QOS1} --delay-qos2 ${DELAY_QOS2} --messages-qos0 ${MESSAGES_QOS0} --messages-qos1 ${MESSAGES_QOS1} --messages-qos2 ${MESSAGES_QOS2} --size-qos0 ${SIZE_QOS0} --size-qos1 ${SIZE_QOS1} --size-qos2 ${SIZE_QOS2} --scenario ${SCENARIO} --connect-rps ${CONNECT_RPS} --cpu ${CPU} --ram-limit ${RAM_LIMIT} --broker-type ${BROKER_TYPE} --run-tests ${RUN_TESTS} --rebuild-images ${REBUILD_IMAGES}"
