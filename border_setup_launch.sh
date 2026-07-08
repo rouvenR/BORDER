@@ -287,7 +287,7 @@ cd /border-project/containernet/BORDER
 
 if [ "$REBUILD_IMAGES" = "true" ]; then
     echo "Rebuilding Docker images before launch"
-    /home/randerer/rebuild_images.sh
+    ./rebuild_images.sh
 fi
 
 configure_docker_default_ulimits
